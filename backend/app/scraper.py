@@ -62,7 +62,11 @@ def parse_rss_items(xml_text: str, source: str) -> list[dict]:
         link = (node.findtext("link") or "").strip()
         pub_date = node.findtext("pubDate") or node.findtext("published")
         desc = (node.findtext("description") or "").strip()
-        author = (node.findtext("author") or node.findtext("dc:creator") or "").strip()
+        author = (
+            node.findtext("author")
+            or node.findtext("{http://purl.org/dc/elements/1.1/}creator")
+            or ""
+        ).strip()
         if not link or not title:
             continue
         items.append(
@@ -79,21 +83,53 @@ def parse_rss_items(xml_text: str, source: str) -> list[dict]:
 
 
 def parse_hackerone_overview_html(html: str) -> list[dict]:
-    pattern = re.compile(r'<a[^>]+href=["\'](/reports/\d+)["\'][^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+    pattern = re.compile(
+        r'<a[^>]+href=["\'](?:https?://hackerone\.com)?(/reports/\d+)["\'][^>]*>(.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
     items: list[dict] = []
+    seen_urls: set[str] = set()
     now = datetime.now(timezone.utc)
-    for href, label in pattern.findall(html):
-        title = re.sub(r"\s+", " ", unescape(re.sub(r"<.*?>", "", label))).strip()
-        if not title:
-            title = f"HackerOne Report {href.split('/')[-1]}"
+
+    def _add_report(url: str, title: str) -> None:
+        if url in seen_urls:
+            return
+        seen_urls.add(url)
         items.append(
             WriteupItem(
                 source="hackerone",
                 title=title,
-                url=f"https://hackerone.com{href}",
+                url=url,
                 published_at=now,
             ).to_record()
         )
+
+    for href, label in pattern.findall(html):
+        title = re.sub(r"\s+", " ", unescape(re.sub(r"<.*?>", "", label))).strip()
+        if not title:
+            title = f"HackerOne Report {href.split('/')[-1]}"
+        _add_report(f"https://hackerone.com{href}", title)
+
+    # Backup extraction for JSON blobs with escaped URLs.
+    raw_url_candidates = re.findall(r'"url"\s*:\s*"([^"]*reports[^"]*)"', html, flags=re.IGNORECASE)
+    for raw_url in raw_url_candidates:
+        normalized = (
+            raw_url.replace("\\u003A", ":")
+            .replace("\\u002F", "/")
+            .replace("\\/", "/")
+        )
+        if normalized.startswith("https://hackerone.com/reports/"):
+            report_url = normalized
+        elif normalized.startswith("/reports/"):
+            report_url = f"https://hackerone.com{normalized}"
+        else:
+            match = re.search(r"hackerone\.com/reports/(\d+)", normalized)
+            if match:
+                report_url = f"https://hackerone.com/reports/{match.group(1)}"
+            else:
+                continue
+        _add_report(report_url, f"HackerOne Report {report_url.split('/')[-1]}")
+
     return items
 
 
