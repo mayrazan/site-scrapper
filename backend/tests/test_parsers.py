@@ -1,8 +1,10 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from app.scraper import (
     MIN_DATE,
+    collect_all_sources,
     dedupe_items,
     filter_recent_items,
     parse_hackerone_overview_html,
@@ -113,6 +115,28 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(deduped), 2)
         self.assertEqual(deduped[0]["url"], "https://example.com/a")
         self.assertEqual(deduped[1]["url"], "https://example.com/b")
+
+    def test_collect_all_sources_continues_when_one_source_fails(self):
+        portswigger_xml = """
+        <rss><channel>
+          <item>
+            <title>PortSwigger</title>
+            <link>https://example.com/p1</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+          </item>
+        </channel></rss>
+        """
+        hackerone_html = '<html><body><a href="/reports/1234">Report</a></body></html>'
+
+        with patch(
+            "app.scraper._get",
+            side_effect=[portswigger_xml, RuntimeError("429 Too Many Requests"), hackerone_html],
+        ):
+            items = collect_all_sources()
+
+        sources = {item["source"] for item in items}
+        self.assertIn("portswigger", sources)
+        self.assertIn("hackerone", sources)
 
 
 if __name__ == "__main__":
