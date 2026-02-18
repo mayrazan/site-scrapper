@@ -27,9 +27,10 @@ def main() -> int:
 
     upserted = upsert_items_to_supabase(settings.supabase_url, settings.supabase_service_key, items)
 
-    message = format_daily_digest(new_items)
-    send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
-    send_discord_message(settings.discord_webhook_url, message)
+    if new_items:
+        message = format_daily_digest(new_items)
+        send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
+        send_discord_message(settings.discord_webhook_url, message)
 
     print(f"Collected: {len(items)} | New: {len(new_items)} | Upserted: {upserted}")
     return 0
