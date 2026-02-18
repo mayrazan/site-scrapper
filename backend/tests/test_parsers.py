@@ -30,6 +30,23 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0]["url"], "https://example.com/w1")
         self.assertEqual(items[0]["title"], "Test Writeup")
 
+    def test_parse_rss_items_extracts_dc_creator_author(self):
+        xml = """
+        <rss xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
+          <item>
+            <title>Namespaced Author</title>
+            <link>https://example.com/w2</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+            <dc:creator>Mayra</dc:creator>
+          </item>
+        </channel></rss>
+        """
+
+        items = parse_rss_items(xml, source="medium")
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["author"], "Mayra")
+
     def test_parse_hackerone_overview_html_extracts_report_links(self):
         html = """
         <html><body>
@@ -43,6 +60,24 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["source"], "hackerone")
         self.assertEqual(items[0]["url"], "https://hackerone.com/reports/1234")
+
+    def test_parse_hackerone_overview_html_extracts_report_links_from_json_blob(self):
+        html = """
+        <html><body>
+          <script>
+            window.__DATA__={"items":[
+              {"url":"https:\\/\\/hackerone.com\\/reports\\/4321"},
+              {"url":"https:\\u002F\\u002Fhackerone.com\\u002Freports\\u002F8765"}
+            ]};
+          </script>
+        </body></html>
+        """
+
+        items = parse_hackerone_overview_html(html)
+        urls = {item["url"] for item in items}
+
+        self.assertIn("https://hackerone.com/reports/4321", urls)
+        self.assertIn("https://hackerone.com/reports/8765", urls)
 
     def test_filter_recent_items_uses_min_2025_date(self):
         items = [
