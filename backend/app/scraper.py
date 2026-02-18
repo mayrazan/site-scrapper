@@ -164,36 +164,63 @@ def dedupe_items(items: Iterable[dict]) -> list[dict]:
 
 def _get(url: str) -> str:
     import requests
+    import time
 
-    res = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
-    res.raise_for_status()
-    return res.text
+    max_attempts = 4
+    backoff_seconds = 2.0
+    for attempt in range(max_attempts):
+        try:
+            res = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
+            if res.status_code == 429 and attempt < max_attempts - 1:
+                retry_after = res.headers.get("Retry-After")
+                wait_seconds = float(retry_after) if retry_after and retry_after.isdigit() else backoff_seconds * (2**attempt)
+                time.sleep(min(wait_seconds, 30.0))
+                continue
+            res.raise_for_status()
+            return res.text
+        except requests.RequestException as exc:
+            response = getattr(exc, "response", None)
+            status = getattr(response, "status_code", None)
+            retriable = status in {429, 500, 502, 503, 504} or status is None
+            if not retriable or attempt >= max_attempts - 1:
+                raise
+            time.sleep(min(backoff_seconds * (2**attempt), 30.0))
+
+    raise RuntimeError(f"failed to fetch {url}")
 
 
 def collect_all_sources() -> list[dict]:
     all_items: list[dict] = []
+    sources: list[tuple[str, str, callable]] = [
+        ("portswigger", "https://portswigger.net/research/rss", lambda body: parse_rss_items(body, source="portswigger")),
+        ("medium", "https://medium.com/feed/tag/bug-bounty", lambda body: parse_rss_items(body, source="medium")),
+    ]
 
-    portswigger_xml = _get("https://portswigger.net/research/rss")
-    all_items.extend(parse_rss_items(portswigger_xml, source="portswigger"))
+    for source_name, source_url, parser in sources:
+        try:
+            source_body = _get(source_url)
+            all_items.extend(parser(source_body))
+        except Exception as exc:
+            print(f"[warn] failed collecting source={source_name} url={source_url}: {exc}")
 
-    medium_xml = _get("https://medium.com/feed/tag/bug-bounty")
-    all_items.extend(parse_rss_items(medium_xml, source="medium"))
-
-    hackerone_html = _get("https://hackerone.com/hacktivity/overview")
-    # Best-effort extraction from rendered page and JSON blobs.
-    all_items.extend(parse_hackerone_overview_html(hackerone_html))
-    if not any(item["source"] == "hackerone" for item in all_items):
-        json_links = re.findall(r'"url":"(https:\\/\\/hackerone.com\\/reports\\/\d+)"', hackerone_html)
-        now = datetime.now(timezone.utc)
-        for raw_url in json_links:
-            all_items.append(
-                WriteupItem(
-                    source="hackerone",
-                    title=f"HackerOne Report {raw_url.split('/')[-1]}",
-                    url=raw_url.replace("\\/", "/"),
-                    published_at=now,
-                ).to_record()
-            )
+    try:
+        hackerone_html = _get("https://hackerone.com/hacktivity/overview")
+        # Best-effort extraction from rendered page and JSON blobs.
+        all_items.extend(parse_hackerone_overview_html(hackerone_html))
+        if not any(item["source"] == "hackerone" for item in all_items):
+            json_links = re.findall(r'"url":"(https:\\/\\/hackerone.com\\/reports\\/\d+)"', hackerone_html)
+            now = datetime.now(timezone.utc)
+            for raw_url in json_links:
+                all_items.append(
+                    WriteupItem(
+                        source="hackerone",
+                        title=f"HackerOne Report {raw_url.split('/')[-1]}",
+                        url=raw_url.replace("\\/", "/"),
+                        published_at=now,
+                    ).to_record()
+                )
+    except Exception as exc:
+        print(f"[warn] failed collecting source=hackerone url=https://hackerone.com/hacktivity/overview: {exc}")
 
     return dedupe_items(filter_recent_items(all_items))
 
