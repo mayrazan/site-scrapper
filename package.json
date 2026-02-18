@@ -1,0 +1,20 @@
+{
+  "name": "site-scrapper-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace frontend",
+    "lint": "npm run lint --workspace frontend",
+    "lint:fix": "npm run lint:fix --workspace frontend",
+    "format": "npm run format --workspace frontend",
+    "format:check": "npm run format:check --workspace frontend",
+    "backend:test": "cd backend && PYTHONPATH=. python3 -m unittest discover -s tests -q",
+    "backend:run": "cd backend && uvicorn app.main:app --reload --port 8000",
+    "backend:scrape": "cd backend && python3 scripts/scrape_and_notify.py",
+    "check": "npm run lint && npm run build && npm run backend:test"
+  }
+}
