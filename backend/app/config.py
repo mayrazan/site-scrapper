@@ -30,6 +30,8 @@ class Settings:
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     discord_webhook_url: str = os.getenv("DISCORD_WEBHOOK_URL", "")
+    hackerone_username: str = os.getenv("HACKERONE_USERNAME", "")
+    hackerone_api_token: str = os.getenv("HACKERONE_API_TOKEN", "")
     min_date: str = os.getenv("MIN_PUBLISHED_DATE", "2025-01-01T00:00:00+00:00")
 
 

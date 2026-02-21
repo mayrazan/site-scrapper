@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 import json
+import os
 import re
 from typing import Iterable
 from urllib.parse import quote
@@ -133,6 +134,95 @@ def parse_hackerone_overview_html(html: str) -> list[dict]:
     return items
 
 
+def parse_hackerone_hacktivity_api(payload: dict) -> list[dict]:
+    items: list[dict] = []
+    seen_urls: set[str] = set()
+    included_reports: dict[str, dict] = {}
+
+    for entry in payload.get("included") or []:
+        if entry.get("type") != "report":
+            continue
+        report_id = str(entry.get("id") or "").strip()
+        if report_id:
+            included_reports[report_id] = entry
+
+    for entry in payload.get("data") or []:
+        attrs = entry.get("attributes") or {}
+        report_link = (
+            entry.get("relationships", {})
+            .get("report", {})
+            .get("data", {})
+        )
+        report_id = str(report_link.get("id") or "").strip()
+        report_entry = included_reports.get(report_id, {})
+        report_attrs = report_entry.get("attributes") or {}
+
+        url = (
+            report_attrs.get("url")
+            or attrs.get("url")
+            or attrs.get("report_url")
+            or ""
+        ).strip()
+        if not url and report_id.isdigit():
+            url = f"https://hackerone.com/reports/{report_id}"
+        if not url:
+            continue
+        if not url.startswith("http"):
+            if url.startswith("/reports/"):
+                url = f"https://hackerone.com{url}"
+            else:
+                continue
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        title = (
+            report_attrs.get("title")
+            or attrs.get("title")
+            or (f"HackerOne Report {report_id}" if report_id else "HackerOne report")
+        )
+        published_raw = (
+            report_attrs.get("disclosed_at")
+            or attrs.get("disclosed_at")
+            or attrs.get("published_at")
+            or attrs.get("created_at")
+        )
+        items.append(
+            WriteupItem(
+                source="hackerone",
+                title=title.strip(),
+                url=url,
+                published_at=_parse_date(published_raw),
+            ).to_record()
+        )
+
+    return items
+
+
+def fetch_hackerone_hacktivity_api(username: str, api_token: str) -> list[dict]:
+    import requests
+
+    endpoint = "https://api.hackerone.com/v1/hackers/hacktivity?page[size]=100"
+    collected: list[dict] = []
+
+    for _ in range(3):
+        resp = requests.get(
+            endpoint,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            auth=(username, api_token),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        collected.extend(parse_hackerone_hacktivity_api(payload))
+        next_url = (payload.get("links") or {}).get("next")
+        if not next_url:
+            break
+        endpoint = next_url
+
+    return dedupe_items(collected)
+
+
 def filter_recent_items(items: Iterable[dict]) -> list[dict]:
     out: list[dict] = []
     for item in items:
@@ -189,7 +279,10 @@ def _get(url: str) -> str:
     raise RuntimeError(f"failed to fetch {url}")
 
 
-def collect_all_sources() -> list[dict]:
+def collect_all_sources(
+    hackerone_username: str | None = None,
+    hackerone_api_token: str | None = None,
+) -> list[dict]:
     all_items: list[dict] = []
     sources: list[tuple[str, str, callable]] = [
         ("portswigger", "https://portswigger.net/research/rss", lambda body: parse_rss_items(body, source="portswigger")),
@@ -203,24 +296,16 @@ def collect_all_sources() -> list[dict]:
         except Exception as exc:
             print(f"[warn] failed collecting source={source_name} url={source_url}: {exc}")
 
-    try:
-        hackerone_html = _get("https://hackerone.com/hacktivity/overview")
-        # Best-effort extraction from rendered page and JSON blobs.
-        all_items.extend(parse_hackerone_overview_html(hackerone_html))
-        if not any(item["source"] == "hackerone" for item in all_items):
-            json_links = re.findall(r'"url":"(https:\\/\\/hackerone.com\\/reports\\/\d+)"', hackerone_html)
-            now = datetime.now(timezone.utc)
-            for raw_url in json_links:
-                all_items.append(
-                    WriteupItem(
-                        source="hackerone",
-                        title=f"HackerOne Report {raw_url.split('/')[-1]}",
-                        url=raw_url.replace("\\/", "/"),
-                        published_at=now,
-                    ).to_record()
-                )
-    except Exception as exc:
-        print(f"[warn] failed collecting source=hackerone url=https://hackerone.com/hacktivity/overview: {exc}")
+    h1_user = (hackerone_username or os.getenv("HACKERONE_USERNAME") or "").strip()
+    h1_token = (hackerone_api_token or os.getenv("HACKERONE_API_TOKEN") or "").strip()
+
+    if h1_user and h1_token:
+        try:
+            all_items.extend(fetch_hackerone_hacktivity_api(h1_user, h1_token))
+        except Exception as exc:
+            print("[warn] failed collecting source=hackerone via api: " f"{exc}")
+    else:
+        print("[warn] skipping hackerone api: HACKERONE_USERNAME/HACKERONE_API_TOKEN not configured")
 
     return dedupe_items(filter_recent_items(all_items))
 

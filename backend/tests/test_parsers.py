@@ -7,6 +7,7 @@ from app.scraper import (
     collect_all_sources,
     dedupe_items,
     filter_recent_items,
+    parse_hackerone_hacktivity_api,
     parse_hackerone_overview_html,
     parse_rss_items,
 )
@@ -81,6 +82,34 @@ class ParserTests(unittest.TestCase):
         self.assertIn("https://hackerone.com/reports/4321", urls)
         self.assertIn("https://hackerone.com/reports/8765", urls)
 
+    def test_parse_hackerone_hacktivity_api_extracts_reports_from_included_data(self):
+        payload = {
+            "data": [
+                {
+                    "type": "hacktivity-item",
+                    "relationships": {"report": {"data": {"type": "report", "id": "4321"}}},
+                }
+            ],
+            "included": [
+                {
+                    "type": "report",
+                    "id": "4321",
+                    "attributes": {
+                        "title": "API report title",
+                        "url": "https://hackerone.com/reports/4321",
+                        "disclosed_at": "2026-02-18T11:00:00Z",
+                    },
+                }
+            ],
+        }
+
+        items = parse_hackerone_hacktivity_api(payload)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["source"], "hackerone")
+        self.assertEqual(items[0]["url"], "https://hackerone.com/reports/4321")
+        self.assertEqual(items[0]["title"], "API report title")
+
     def test_filter_recent_items_uses_min_2025_date(self):
         items = [
             {
@@ -126,17 +155,57 @@ class ParserTests(unittest.TestCase):
           </item>
         </channel></rss>
         """
-        hackerone_html = '<html><body><a href="/reports/1234">Report</a></body></html>'
 
         with patch(
             "app.scraper._get",
-            side_effect=[portswigger_xml, RuntimeError("429 Too Many Requests"), hackerone_html],
+            side_effect=[portswigger_xml, RuntimeError("429 Too Many Requests")],
         ):
             items = collect_all_sources()
 
         sources = {item["source"] for item in items}
         self.assertIn("portswigger", sources)
+        self.assertNotIn("hackerone", sources)
+
+    def test_collect_all_sources_uses_hackerone_api_when_credentials_present(self):
+        portswigger_xml = """
+        <rss><channel>
+          <item>
+            <title>PortSwigger</title>
+            <link>https://example.com/p1</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+          </item>
+        </channel></rss>
+        """
+        medium_xml = """
+        <rss><channel>
+          <item>
+            <title>Medium</title>
+            <link>https://example.com/m1</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+          </item>
+        </channel></rss>
+        """
+        h1_items = [
+            {
+                "source": "hackerone",
+                "title": "API report",
+                "url": "https://hackerone.com/reports/9999",
+                "published_at": datetime(2026, 2, 18, tzinfo=timezone.utc).isoformat(),
+            }
+        ]
+
+        with (
+            patch("app.scraper._get", side_effect=[portswigger_xml, medium_xml]) as get_mock,
+            patch("app.scraper.fetch_hackerone_hacktivity_api", return_value=h1_items) as h1_api_mock,
+        ):
+            items = collect_all_sources(hackerone_username="user", hackerone_api_token="token")
+
+        sources = {item["source"] for item in items}
+        self.assertIn("portswigger", sources)
+        self.assertIn("medium", sources)
         self.assertIn("hackerone", sources)
+        h1_api_mock.assert_called_once_with("user", "token")
+        self.assertEqual(get_mock.call_count, 2)
 
 
 if __name__ == "__main__":

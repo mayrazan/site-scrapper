@@ -22,3 +22,5 @@ Required env vars:
 - `TELEGRAM_BOT_TOKEN` (optional)
 - `TELEGRAM_CHAT_ID` (optional)
 - `DISCORD_WEBHOOK_URL` (optional)
+- `HACKERONE_USERNAME` (optional, enables HackerOne source via API)
+- `HACKERONE_API_TOKEN` (optional, enables HackerOne source via API)

@@ -13,7 +13,7 @@ Agregador pessoal de write-ups de bug bounty com atualização diária e alertas
 
 - https://portswigger.net/research
 - https://medium.com/tag/bug-bounty (RSS)
-- https://hackerone.com/hacktivity/overview
+- https://api.hackerone.com/v1/hackers/hacktivity (com credenciais de API)
 
 ## Estrutura
 
@@ -52,6 +52,8 @@ Em `Settings > Secrets and variables > Actions`, criar:
 - `TELEGRAM_BOT_TOKEN` (opcional)
 - `TELEGRAM_CHAT_ID` (opcional)
 - `DISCORD_WEBHOOK_URL` (opcional)
+- `HACKERONE_USERNAME` (opcional, habilita coleta HackerOne via API)
+- `HACKERONE_API_TOKEN` (opcional, habilita coleta HackerOne via API)
 
 O workflow diário está em UTC (`08:15`).
 

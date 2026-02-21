@@ -20,7 +20,10 @@ def main() -> int:
     if not settings.supabase_url or not settings.supabase_service_key:
         raise SystemExit("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
 
-    items = collect_all_sources()
+    items = collect_all_sources(
+        hackerone_username=getattr(settings, "hackerone_username", ""),
+        hackerone_api_token=getattr(settings, "hackerone_api_token", ""),
+    )
     urls = [item["url"] for item in items]
     existing = fetch_existing_urls(settings.supabase_url, settings.supabase_service_key, urls)
     new_items = [item for item in items if item["url"] not in existing]
