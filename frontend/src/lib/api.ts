@@ -20,6 +20,15 @@ export type WriteupFilters = {
   year: YearString
   month: MonthString
   favorites: boolean
+  q: string
+}
+
+export const initialFilters: WriteupFilters = {
+  source: 'all',
+  year: '',
+  month: '',
+  favorites: false,
+  q: '',
 }
 
 const API_BASE =
@@ -36,6 +45,9 @@ export async function fetchWriteups(filters: WriteupFilters): Promise<Writeup[]>
   }
   if (filters.month) {
     params.set('month', filters.month)
+  }
+  if (filters.q) {
+    params.set('q', filters.q)
   }
 
   const response = await fetch(`${API_BASE}/api/writeups?${params.toString()}`)

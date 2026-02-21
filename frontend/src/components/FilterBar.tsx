@@ -1,6 +1,8 @@
-import { Button, Group, Select, Switch } from '@mantine/core'
+import { Button, Group, Select, Switch, TextInput } from '@mantine/core'
+import { useState } from 'react'
 
 import type { FilterSource, MonthString, WriteupFilters, YearString } from '../lib/api'
+import { initialFilters } from '../lib/api'
 
 type Props = {
   filters: WriteupFilters
@@ -36,17 +38,29 @@ const sourceOptions: { value: FilterSource; label: string }[] = [
   { value: 'hackerone', label: 'HackerOne' },
 ]
 
-const initialFilters: WriteupFilters = {
-  source: 'all',
-  year: '',
-  month: '',
-  favorites: false,
-}
-
 export function FilterBar({ filters, onChange }: Props) {
+  const [inputValue, setInputValue] = useState(filters.q)
+  const [prevQ, setPrevQ] = useState(filters.q)
+
+  if (prevQ !== filters.q) {
+    setPrevQ(filters.q)
+    if (filters.q === '') setInputValue('')
+  }
+
   return (
     <div className="filters">
       <div className="filters-grid">
+        <TextInput
+          label="Buscar"
+          placeholder="Título ou resumo…"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            const trimmed = inputValue.trim()
+            onChange({ ...filters, q: trimmed })
+          }}
+        />
         <Select
           label="Fonte"
           data={sourceOptions}
@@ -76,7 +90,15 @@ export function FilterBar({ filters, onChange }: Props) {
         mt="sm"
       />
       <Group justify="flex-end" mt="sm">
-        <Button className="reset-filters" variant="light" radius="md" onClick={() => onChange(initialFilters)}>
+        <Button
+          className="reset-filters"
+          variant="light"
+          radius="md"
+          onClick={() => {
+            setInputValue('')
+            onChange(initialFilters)
+          }}
+        >
           Limpar filtros
         </Button>
       </Group>

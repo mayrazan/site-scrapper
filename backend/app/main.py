@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -10,6 +11,10 @@ import requests
 from pydantic import BaseModel
 
 from app.config import settings
+
+
+def _sanitize_q(q: str) -> str:
+    return re.sub(r'[*(,)]', '', q).strip()
 
 
 class PatchFavoriteBody(BaseModel):
@@ -38,6 +43,7 @@ def list_writeups(
     year: int | None = Query(default=None, ge=2025),
     month: int | None = Query(default=None, ge=1, le=12),
     limit: int = Query(default=100, ge=1, le=500),
+    q: str | None = Query(default=None),
 ) -> list[dict[str, Any]]:
     if not settings.supabase_url or not settings.supabase_service_key:
         raise HTTPException(status_code=500, detail="Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY")
@@ -55,6 +61,12 @@ def list_writeups(
             end = datetime(year + 1, 1, 1).isoformat()
         filters.append(f"published_at=gte.{start}")
         filters.append(f"published_at=lt.{end}")
+    if q:
+        sanitized = _sanitize_q(q)
+        if sanitized:
+            filters.append(
+                f"or=(title.ilike.*{sanitized}*,summary.ilike.*{sanitized}*)"
+            )
     filters.append("order=published_at.desc")
     filters.append(f"limit={limit}")
 
@@ -71,7 +83,7 @@ def list_writeups(
     return response.json()
 
 
-@app.patch("/api/writeups/{writeup_id}", status_code=204)
+@app.patch("/api/writeups/{writeup_id}", status_code=204, response_model=None)
 def patch_favorite(writeup_id: UUID, body: PatchFavoriteBody) -> None:
     if not settings.supabase_url or not settings.supabase_service_key:
         raise HTTPException(status_code=500, detail="Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY")

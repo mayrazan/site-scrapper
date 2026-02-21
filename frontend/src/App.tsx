@@ -1,6 +1,7 @@
 import {
   Alert,
   AppShell,
+  Button,
   Container,
   Group,
   Loader,
@@ -16,13 +17,7 @@ import { FilterBar } from './components/FilterBar'
 import { WriteupCard } from './components/WriteupCard'
 import { useWriteups } from './hooks/useWriteups'
 import type { WriteupFilters } from './lib/api'
-
-const initialFilters: WriteupFilters = {
-  source: 'all',
-  year: '',
-  month: '',
-  favorites: false,
-}
+import { initialFilters } from './lib/api'
 
 export function App() {
   const [filters, setFilters] = useState<WriteupFilters>(initialFilters)
@@ -63,6 +58,7 @@ export function App() {
   }, [sorted])
 
   const showFavoritesEmpty = !isPending && !error && filtered.length === 0 && filters.favorites
+  const showSearchEmpty = !isPending && !error && filtered.length === 0 && !!filters.q
 
   return (
     <AppShell>
@@ -125,7 +121,23 @@ export function App() {
             </Text>
           ) : null}
 
-          {!isPending && !error && !showFavoritesEmpty ? (
+          {showSearchEmpty ? (
+            <Stack align="flex-start" gap="xs">
+              <Text size="sm" c="dimmed">
+                Nenhum writeup encontrado para "{filters.q}". Tente outros termos ou limpe a busca.
+              </Text>
+              <Button
+                variant="light"
+                radius="md"
+                size="xs"
+                onClick={() => setFilters({ ...filters, q: '' })}
+              >
+                Limpar busca
+              </Button>
+            </Stack>
+          ) : null}
+
+          {!isPending && !error && !showFavoritesEmpty && !showSearchEmpty ? (
             <>
               <Text size="sm" className="result-count">
                 {filtered.length} resultados encontrados

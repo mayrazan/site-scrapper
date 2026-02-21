@@ -4,7 +4,7 @@ import { fetchWriteups, type WriteupFilters } from '../lib/api'
 
 export const writeupsQueryOptions = (filters: WriteupFilters) =>
   queryOptions({
-    queryKey: ['writeups', filters.source, filters.year, filters.month],
+    queryKey: ['writeups', filters.source, filters.year, filters.month, filters.q],
     queryFn: () => fetchWriteups(filters),
   })
 
