@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+from pydantic import BaseModel
 
 from app.config import settings
+
+
+class PatchFavoriteBody(BaseModel):
+    is_favorite: bool
 
 app = FastAPI(title="Bug Bounty Writeups API", version="0.1.0")
 
@@ -36,7 +42,7 @@ def list_writeups(
     if not settings.supabase_url or not settings.supabase_service_key:
         raise HTTPException(status_code=500, detail="Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY")
 
-    filters = ["select=id,source,title,url,author,summary,published_at,created_at"]
+    filters = ["select=id,source,title,url,author,summary,published_at,created_at,is_favorite"]
     if source:
         filters.append(f"source=eq.{source}")
     if year:
@@ -63,3 +69,21 @@ def list_writeups(
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Supabase query failed: {exc}") from exc
     return response.json()
+
+
+@app.patch("/api/writeups/{writeup_id}", status_code=204)
+def patch_favorite(writeup_id: UUID, body: PatchFavoriteBody) -> None:
+    if not settings.supabase_url or not settings.supabase_service_key:
+        raise HTTPException(status_code=500, detail="Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY")
+    endpoint = f"{settings.supabase_url}/rest/v1/writeups?id=eq.{writeup_id}"
+    headers = {
+        "apikey": settings.supabase_service_key,
+        "Authorization": f"Bearer {settings.supabase_service_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+    }
+    try:
+        response = requests.patch(endpoint, headers=headers, json={"is_favorite": body.is_favorite}, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Supabase update failed: {exc}") from exc

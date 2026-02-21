@@ -21,6 +21,7 @@ const initialFilters: WriteupFilters = {
   source: 'all',
   year: '',
   month: '',
+  favorites: false,
 }
 
 export function App() {
@@ -33,6 +34,11 @@ export function App() {
         return new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
       }),
     [data],
+  )
+
+  const filtered = useMemo(
+    () => (filters.favorites ? sorted.filter((item) => item.is_favorite) : sorted),
+    [sorted, filters.favorites],
   )
 
   const metrics = useMemo(() => {
@@ -55,6 +61,8 @@ export function App() {
       freshest,
     }
   }, [sorted])
+
+  const showFavoritesEmpty = !isPending && !error && filtered.length === 0 && filters.favorites
 
   return (
     <AppShell>
@@ -111,13 +119,19 @@ export function App() {
             </Alert>
           ) : null}
 
-          {!isPending && !error ? (
+          {showFavoritesEmpty ? (
+            <Text size="sm" c="dimmed">
+              Nenhum favorito ainda. Clique na estrela de um writeup para salvá-lo.
+            </Text>
+          ) : null}
+
+          {!isPending && !error && !showFavoritesEmpty ? (
             <>
               <Text size="sm" className="result-count">
-                {sorted.length} resultados encontrados
+                {filtered.length} resultados encontrados
               </Text>
               <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                {sorted.map((item) => (
+                {filtered.map((item) => (
                   <WriteupCard key={item.url} item={item} />
                 ))}
               </SimpleGrid>

@@ -1,4 +1,4 @@
-import { Button, Group, Select } from '@mantine/core'
+import { Button, Group, Select, Switch } from '@mantine/core'
 
 import type { FilterSource, MonthString, WriteupFilters, YearString } from '../lib/api'
 
@@ -40,6 +40,7 @@ const initialFilters: WriteupFilters = {
   source: 'all',
   year: '',
   month: '',
+  favorites: false,
 }
 
 export function FilterBar({ filters, onChange }: Props) {
@@ -68,6 +69,12 @@ export function FilterBar({ filters, onChange }: Props) {
           comboboxProps={{ withinPortal: true, zIndex: 450 }}
         />
       </div>
+      <Switch
+        label="Somente favoritos"
+        checked={filters.favorites}
+        onChange={(e) => onChange({ ...filters, favorites: e.currentTarget.checked })}
+        mt="sm"
+      />
       <Group justify="flex-end" mt="sm">
         <Button className="reset-filters" variant="light" radius="md" onClick={() => onChange(initialFilters)}>
           Limpar filtros

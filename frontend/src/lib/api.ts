@@ -12,12 +12,14 @@ export type Writeup = {
   summary: string | null
   published_at: string
   created_at: string
+  is_favorite: boolean
 }
 
 export type WriteupFilters = {
   source: FilterSource
   year: YearString
   month: MonthString
+  favorites: boolean
 }
 
 const API_BASE =
@@ -45,4 +47,15 @@ export async function fetchWriteups(filters: WriteupFilters): Promise<Writeup[]>
     throw new Error('Resposta inválida da API')
   }
   return data as Writeup[]
+}
+
+export async function patchFavorite(id: string, value: boolean): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/writeups/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_favorite: value }),
+  })
+  if (!response.ok) {
+    throw new Error(`Falha ao atualizar favorito: ${response.status}`)
+  }
 }
