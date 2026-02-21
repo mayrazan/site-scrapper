@@ -17,3 +17,6 @@ frontend/dist/
 # OS
 .DS_Store
 node_modules
+
+# Worktrees
+.worktrees/
