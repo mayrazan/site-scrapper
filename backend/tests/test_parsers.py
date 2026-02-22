@@ -207,6 +207,45 @@ class ParserTests(unittest.TestCase):
         h1_api_mock.assert_called_once_with("user", "token")
         self.assertEqual(get_mock.call_count, 2)
 
+    def test_collect_all_sources_falls_back_to_hackerone_overview_when_api_returns_empty(self):
+        portswigger_xml = """
+        <rss><channel>
+          <item>
+            <title>PortSwigger</title>
+            <link>https://example.com/p1</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+          </item>
+        </channel></rss>
+        """
+        medium_xml = """
+        <rss><channel>
+          <item>
+            <title>Medium</title>
+            <link>https://example.com/m1</link>
+            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
+          </item>
+        </channel></rss>
+        """
+        h1_overview_html = """
+        <html><body>
+          <a href="/reports/1234">Overview disclosed report</a>
+        </body></html>
+        """
+
+        with (
+            patch(
+                "app.scraper._get",
+                side_effect=[portswigger_xml, medium_xml, h1_overview_html, "<html></html>"],
+            ) as get_mock,
+            patch("app.scraper.fetch_hackerone_hacktivity_api", return_value=[]) as h1_api_mock,
+        ):
+            items = collect_all_sources(hackerone_username="user", hackerone_api_token="token")
+
+        urls = {item["url"] for item in items}
+        self.assertIn("https://hackerone.com/reports/1234", urls)
+        h1_api_mock.assert_called_once_with("user", "token")
+        self.assertEqual(get_mock.call_count, 4)
+
 
 if __name__ == "__main__":
     unittest.main()

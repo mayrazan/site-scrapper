@@ -223,6 +223,28 @@ def fetch_hackerone_hacktivity_api(username: str, api_token: str) -> list[dict]:
     return dedupe_items(collected)
 
 
+def fetch_hackerone_overview_disclosed(max_pages: int = 3) -> list[dict]:
+    collected: list[dict] = []
+    for page_index in range(max_pages):
+        endpoint = (
+            "https://hackerone.com/hacktivity/overview"
+            "?queryString=disclosed%3Atrue"
+            "&sortField=latest_disclosable_activity_at"
+            "&sortDirection=DESC"
+            f"&pageIndex={page_index}"
+        )
+        html = _get(endpoint)
+        page_items = parse_hackerone_overview_html(html)
+        if not page_items:
+            break
+        before_count = len(collected)
+        collected.extend(page_items)
+        # Stop early when pagination no longer yields new report URLs.
+        if len(dedupe_items(collected)) == before_count:
+            break
+    return dedupe_items(collected)
+
+
 def filter_recent_items(items: Iterable[dict]) -> list[dict]:
     out: list[dict] = []
     for item in items:
@@ -300,10 +322,17 @@ def collect_all_sources(
     h1_token = (hackerone_api_token or os.getenv("HACKERONE_API_TOKEN") or "").strip()
 
     if h1_user and h1_token:
+        h1_items: list[dict] = []
         try:
-            all_items.extend(fetch_hackerone_hacktivity_api(h1_user, h1_token))
+            h1_items = fetch_hackerone_hacktivity_api(h1_user, h1_token)
         except Exception as exc:
             print("[warn] failed collecting source=hackerone via api: " f"{exc}")
+        if not h1_items:
+            try:
+                h1_items = fetch_hackerone_overview_disclosed()
+            except Exception as exc:
+                print("[warn] failed collecting source=hackerone via overview: " f"{exc}")
+        all_items.extend(h1_items)
     else:
         print("[warn] skipping hackerone api: HACKERONE_USERNAME/HACKERONE_API_TOKEN not configured")
 
