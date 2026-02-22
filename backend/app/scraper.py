@@ -3,10 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from html import unescape
 import json
 import os
-import re
 from typing import Iterable
 from urllib.parse import quote
 import xml.etree.ElementTree as ET
@@ -83,57 +81,6 @@ def parse_rss_items(xml_text: str, source: str) -> list[dict]:
     return items
 
 
-def parse_hackerone_overview_html(html: str) -> list[dict]:
-    pattern = re.compile(
-        r'<a[^>]+href=["\'](?:https?://hackerone\.com)?(/reports/\d+)["\'][^>]*>(.*?)</a>',
-        re.IGNORECASE | re.DOTALL,
-    )
-    items: list[dict] = []
-    seen_urls: set[str] = set()
-    now = datetime.now(timezone.utc)
-
-    def _add_report(url: str, title: str) -> None:
-        if url in seen_urls:
-            return
-        seen_urls.add(url)
-        items.append(
-            WriteupItem(
-                source="hackerone",
-                title=title,
-                url=url,
-                published_at=now,
-            ).to_record()
-        )
-
-    for href, label in pattern.findall(html):
-        title = re.sub(r"\s+", " ", unescape(re.sub(r"<.*?>", "", label))).strip()
-        if not title:
-            title = f"HackerOne Report {href.split('/')[-1]}"
-        _add_report(f"https://hackerone.com{href}", title)
-
-    # Backup extraction for JSON blobs with escaped URLs.
-    raw_url_candidates = re.findall(r'"url"\s*:\s*"([^"]*reports[^"]*)"', html, flags=re.IGNORECASE)
-    for raw_url in raw_url_candidates:
-        normalized = (
-            raw_url.replace("\\u003A", ":")
-            .replace("\\u002F", "/")
-            .replace("\\/", "/")
-        )
-        if normalized.startswith("https://hackerone.com/reports/"):
-            report_url = normalized
-        elif normalized.startswith("/reports/"):
-            report_url = f"https://hackerone.com{normalized}"
-        else:
-            match = re.search(r"hackerone\.com/reports/(\d+)", normalized)
-            if match:
-                report_url = f"https://hackerone.com/reports/{match.group(1)}"
-            else:
-                continue
-        _add_report(report_url, f"HackerOne Report {report_url.split('/')[-1]}")
-
-    return items
-
-
 def parse_hackerone_hacktivity_api(payload: dict) -> list[dict]:
     items: list[dict] = []
     seen_urls: set[str] = set()
@@ -202,7 +149,7 @@ def parse_hackerone_hacktivity_api(payload: dict) -> list[dict]:
 def fetch_hackerone_hacktivity_api(username: str, api_token: str) -> list[dict]:
     import requests
 
-    endpoint = "https://api.hackerone.com/v1/hackers/hacktivity?page[size]=100"
+    endpoint = "https://api.hackerone.com/v1/hackers/hacktivity?page[size]=100&queryString=disclosed:true"
     collected: list[dict] = []
 
     for _ in range(3):
@@ -220,28 +167,6 @@ def fetch_hackerone_hacktivity_api(username: str, api_token: str) -> list[dict]:
             break
         endpoint = next_url
 
-    return dedupe_items(collected)
-
-
-def fetch_hackerone_overview_disclosed(max_pages: int = 3) -> list[dict]:
-    collected: list[dict] = []
-    for page_index in range(max_pages):
-        endpoint = (
-            "https://hackerone.com/hacktivity/overview"
-            "?queryString=disclosed%3Atrue"
-            "&sortField=latest_disclosable_activity_at"
-            "&sortDirection=DESC"
-            f"&pageIndex={page_index}"
-        )
-        html = _get(endpoint)
-        page_items = parse_hackerone_overview_html(html)
-        if not page_items:
-            break
-        before_count = len(collected)
-        collected.extend(page_items)
-        # Stop early when pagination no longer yields new report URLs.
-        if len(dedupe_items(collected)) == before_count:
-            break
     return dedupe_items(collected)
 
 
@@ -322,17 +247,10 @@ def collect_all_sources(
     h1_token = (hackerone_api_token or os.getenv("HACKERONE_API_TOKEN") or "").strip()
 
     if h1_user and h1_token:
-        h1_items: list[dict] = []
         try:
-            h1_items = fetch_hackerone_hacktivity_api(h1_user, h1_token)
+            all_items.extend(fetch_hackerone_hacktivity_api(h1_user, h1_token))
         except Exception as exc:
             print("[warn] failed collecting source=hackerone via api: " f"{exc}")
-        if not h1_items:
-            try:
-                h1_items = fetch_hackerone_overview_disclosed()
-            except Exception as exc:
-                print("[warn] failed collecting source=hackerone via overview: " f"{exc}")
-        all_items.extend(h1_items)
     else:
         print("[warn] skipping hackerone api: HACKERONE_USERNAME/HACKERONE_API_TOKEN not configured")
 

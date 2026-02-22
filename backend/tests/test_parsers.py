@@ -1,14 +1,14 @@
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.scraper import (
     MIN_DATE,
     collect_all_sources,
     dedupe_items,
+    fetch_hackerone_hacktivity_api,
     filter_recent_items,
     parse_hackerone_hacktivity_api,
-    parse_hackerone_overview_html,
     parse_rss_items,
 )
 
@@ -50,38 +50,6 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["author"], "Mayra")
 
-    def test_parse_hackerone_overview_html_extracts_report_links(self):
-        html = """
-        <html><body>
-          <a href="/reports/1234">Great bug chain</a>
-          <a href="/reports/8888">Another report</a>
-        </body></html>
-        """
-
-        items = parse_hackerone_overview_html(html)
-
-        self.assertEqual(len(items), 2)
-        self.assertEqual(items[0]["source"], "hackerone")
-        self.assertEqual(items[0]["url"], "https://hackerone.com/reports/1234")
-
-    def test_parse_hackerone_overview_html_extracts_report_links_from_json_blob(self):
-        html = """
-        <html><body>
-          <script>
-            window.__DATA__={"items":[
-              {"url":"https:\\/\\/hackerone.com\\/reports\\/4321"},
-              {"url":"https:\\u002F\\u002Fhackerone.com\\u002Freports\\u002F8765"}
-            ]};
-          </script>
-        </body></html>
-        """
-
-        items = parse_hackerone_overview_html(html)
-        urls = {item["url"] for item in items}
-
-        self.assertIn("https://hackerone.com/reports/4321", urls)
-        self.assertIn("https://hackerone.com/reports/8765", urls)
-
     def test_parse_hackerone_hacktivity_api_extracts_reports_from_included_data(self):
         payload = {
             "data": [
@@ -109,6 +77,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0]["source"], "hackerone")
         self.assertEqual(items[0]["url"], "https://hackerone.com/reports/4321")
         self.assertEqual(items[0]["title"], "API report title")
+
+    def test_fetch_hackerone_hacktivity_api_uses_disclosed_true_filter(self):
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"data": [], "links": {}}
+
+        with patch("requests.get", return_value=response) as get_mock:
+            fetch_hackerone_hacktivity_api("user", "token")
+
+        called_url = get_mock.call_args[0][0]
+        self.assertIn("queryString=disclosed:true", called_url)
 
     def test_filter_recent_items_uses_min_2025_date(self):
         items = [
@@ -206,46 +185,6 @@ class ParserTests(unittest.TestCase):
         self.assertIn("hackerone", sources)
         h1_api_mock.assert_called_once_with("user", "token")
         self.assertEqual(get_mock.call_count, 2)
-
-    def test_collect_all_sources_falls_back_to_hackerone_overview_when_api_returns_empty(self):
-        portswigger_xml = """
-        <rss><channel>
-          <item>
-            <title>PortSwigger</title>
-            <link>https://example.com/p1</link>
-            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
-          </item>
-        </channel></rss>
-        """
-        medium_xml = """
-        <rss><channel>
-          <item>
-            <title>Medium</title>
-            <link>https://example.com/m1</link>
-            <pubDate>Mon, 15 Jan 2026 10:00:00 GMT</pubDate>
-          </item>
-        </channel></rss>
-        """
-        h1_overview_html = """
-        <html><body>
-          <a href="/reports/1234">Overview disclosed report</a>
-        </body></html>
-        """
-
-        with (
-            patch(
-                "app.scraper._get",
-                side_effect=[portswigger_xml, medium_xml, h1_overview_html, "<html></html>"],
-            ) as get_mock,
-            patch("app.scraper.fetch_hackerone_hacktivity_api", return_value=[]) as h1_api_mock,
-        ):
-            items = collect_all_sources(hackerone_username="user", hackerone_api_token="token")
-
-        urls = {item["url"] for item in items}
-        self.assertIn("https://hackerone.com/reports/1234", urls)
-        h1_api_mock.assert_called_once_with("user", "token")
-        self.assertEqual(get_mock.call_count, 4)
-
 
 if __name__ == "__main__":
     unittest.main()
